@@ -230,7 +230,7 @@ class SVG:
         viz_elements = self._get_viz_elements(with_points, with_handles, with_bboxes, color_firstlast, with_moves)
         newline = "\n"
         return (
-            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{self.viewbox.to_str()}" height="{self.viewbox.wh.x}px" width="{self.viewbox.wh.y}px">'
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{self.viewbox.to_str()}" height="{self.viewbox.wh.y}px" width="{self.viewbox.wh.x}px">'
             f'{self._markers() if with_markers else ""}'
             f'{newline.join(svg_path_group.to_str(fill=fill, with_markers=with_markers) for svg_path_group in [*self.svg_path_groups, *viz_elements])}'
             '</svg>')
