@@ -1,4 +1,4 @@
-# AniClipart: Clipart Animation with Text-to-Video Priors
+# AniClipart: Clipart Animation with Text-to-Video Priors (IJCV 2024)
 
 # Setup
 ```
