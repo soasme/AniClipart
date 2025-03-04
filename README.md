@@ -2,20 +2,23 @@
 
 # Setup
 ```
-git clone https://github.com/kingnobro/AniClipart.git
+git clone https://github.com/soasme/AniClipart.git
 cd AniClipart
 ```
 
 ## Environment
 To set up our environment, please run:
 ```
-conda env create -f environment.yml
+python3 -m venv venv
+venv/bin/python3 -m pip install -r requirements.txt
 ```
 Next, you need to install diffvg:
 ```bash
 git clone https://github.com/BachiLi/diffvg.git
 cd diffvg
 git submodule update --init --recursive
+cd pybind11
+git pull origin master # diffvg is out-dated.
 python setup.py install
 ```
 

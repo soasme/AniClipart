@@ -3,7 +3,7 @@ from .geom import Bbox, Point
 import math
 import numpy as np
 import IPython.display as ipd
-from moviepy.editor import ImageClip, concatenate_videoclips, ipython_display
+from moviepy import ImageClip, concatenate_videoclips
 
 
 def make_grid(svgs, num_cols=3, grid_width=24):
@@ -78,7 +78,7 @@ COLORS = ["aliceblue", "antiquewhite", "aqua", "aquamarine", "azure", "beige", "
 
 
 def to_gif(img_list, file_path=None, frame_duration=0.1, do_display=True):
-    clips = [ImageClip(np.array(img)).set_duration(frame_duration) for img in img_list]
+    clips = [ImageClip(np.array(img)).with_duration(frame_duration) for img in img_list]
 
     clip = concatenate_videoclips(clips, method="compose", bg_color=(255, 255, 255))
 
@@ -87,4 +87,4 @@ def to_gif(img_list, file_path=None, frame_duration=0.1, do_display=True):
 
     if do_display:
         src = clip if file_path is None else file_path
-        ipd.display(ipython_display(src, fps=24, rd_kwargs=dict(logger=None), autoplay=1, loop=1))
+        raise NotImplemented("ipd.display(ipython_display(src, fps=24, rd_kwargs=dict(logger=None), autoplay=1, loop=1))")
