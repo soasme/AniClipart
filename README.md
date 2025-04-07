@@ -9,6 +9,7 @@ cd AniClipart
 ## Environment
 To set up our environment, please run:
 ```
+apt install git python3 python3.12-venv ffmpeg gcc g++ vim cmake python3-dev libcairo2-dev libgl-dev
 python3 -m venv venv
 venv/bin/python3 -m pip install -r requirements.txt
 ```
@@ -17,8 +18,11 @@ Next, you need to install diffvg:
 git clone https://github.com/BachiLi/diffvg.git
 cd diffvg
 git submodule update --init --recursive
+
 cd pybind11
 git pull origin master # diffvg is out-dated.
+
+cd ..
 python setup.py install
 ```
 
