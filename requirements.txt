@@ -10,8 +10,8 @@ easydict
 cssutils
 shapely
 lightning
-imageio==2.19.3
-imageio-ffmpeg==0.4.7
+imageio
+imageio-ffmpeg
 scikit-image
 wandb
 moviepy
