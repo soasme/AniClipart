@@ -1,8 +1,6 @@
 from diffusers import DiffusionPipeline
 import torch.nn as nn
 import torch
-from torch.cuda.amp import custom_bwd, custom_fwd
-
 import einops
 
 from shapely.geometry import Point
@@ -19,14 +17,12 @@ from svglib.geom import Point
 # =============================================
 class SpecifyGradient(torch.autograd.Function):
     @staticmethod
-    @custom_fwd
     def forward(ctx, input_tensor, gt_grad):
         ctx.save_for_backward(gt_grad)
         # we return a dummy value 1, which will be scaled by amp's scaler so we get the scale in backward.
         return torch.ones([1], device=input_tensor.device, dtype=input_tensor.dtype)
 
     @staticmethod
-    @custom_bwd
     def backward(ctx, grad_scale):
         gt_grad, = ctx.saved_tensors
         gt_grad = gt_grad * grad_scale
@@ -52,7 +48,8 @@ class SDSLossBase(nn.Module):
         self.alphas = self.pipe.scheduler.alphas_cumprod.to(self.device)
         self.sigmas = (1 - self.pipe.scheduler.alphas_cumprod).to(self.device)
 
-        if cfg.use_xformers:
+        # Only enable xformers if running on GPU and the flag is set
+        if cfg.use_xformers and torch.cuda.is_available():
             self.pipe.enable_xformers_memory_efficient_attention()
 
         self.text_embeddings = self.embed_text(self.cfg.caption)
@@ -62,13 +59,17 @@ class SDSLossBase(nn.Module):
             del self.pipe.text_encoder
 
     def maybe_init_pipe(self, reuse_pipe):
+        # Determine appropriate dtype based on device
+        dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+        variant = "fp16" if torch.cuda.is_available() else None
+        
         if reuse_pipe:
             if SDSLossBase._global_pipe is None:
-                SDSLossBase._global_pipe = DiffusionPipeline.from_pretrained(self.cfg.model_name, torch_dtype=torch.float16, variant="fp16")
+                SDSLossBase._global_pipe = DiffusionPipeline.from_pretrained(self.cfg.model_name, torch_dtype=dtype, variant=variant)
                 SDSLossBase._global_pipe = SDSLossBase._global_pipe.to(self.device)
             self.pipe = SDSLossBase._global_pipe
         else:
-            self.pipe = DiffusionPipeline.from_pretrained(self.cfg.model_name, torch_dtype=torch.float16, variant="fp16")
+            self.pipe = DiffusionPipeline.from_pretrained(self.cfg.model_name, torch_dtype=dtype, variant=variant)
             self.pipe = self.pipe.to(self.device)
 
     def embed_text(self, caption):
@@ -92,12 +93,20 @@ class SDSLossBase(nn.Module):
     def prepare_latents(self, x_aug):
         x = x_aug * 2. - 1. # encode rendered image, values should be in [-1, 1]
         
-        with torch.cuda.amp.autocast():
-            batch_size, num_frames, channels, height, width = x.shape # [1, K, 3, 256, 256], for K frames
-            x = x.reshape(batch_size * num_frames, channels, height, width) # [K, 3, 256, 256], for the VAE encoder
-            init_latent_z = (self.pipe.vae.encode(x).latent_dist.sample()) # [K, 4, 32, 32]
+        # Use conditional autocast only if on CUDA
+        if torch.cuda.is_available():
+            with torch.cuda.amp.autocast():
+                batch_size, num_frames, channels, height, width = x.shape # [1, K, 3, 256, 256], for K frames
+                x = x.reshape(batch_size * num_frames, channels, height, width) # [K, 3, 256, 256], for the VAE encoder
+                init_latent_z = (self.pipe.vae.encode(x).latent_dist.sample()) # [K, 4, 32, 32]
+                frames, channel, h_, w_ = init_latent_z.shape
+                init_latent_z = init_latent_z[None, :].reshape(batch_size, num_frames, channel, h_, w_).permute(0, 2, 1, 3, 4) # [1, 4, K, 32, 32] for the video model
+        else:
+            batch_size, num_frames, channels, height, width = x.shape
+            x = x.reshape(batch_size * num_frames, channels, height, width)
+            init_latent_z = (self.pipe.vae.encode(x).latent_dist.sample())
             frames, channel, h_, w_ = init_latent_z.shape
-            init_latent_z = init_latent_z[None, :].reshape(batch_size, num_frames, channel, h_, w_).permute(0, 2, 1, 3, 4) # [1, 4, K, 32, 32] for the video model
+            init_latent_z = init_latent_z[None, :].reshape(batch_size, num_frames, channel, h_, w_).permute(0, 2, 1, 3, 4)
             
         latent_z = self.pipe.vae.config.scaling_factor * init_latent_z  # scaling_factor * init_latents
 
@@ -148,7 +157,12 @@ class SDSLossBase(nn.Module):
             # denoise
             z_in = torch.cat([noised_latent_zt] * 2)  # expand latents for classifier free guidance
             timestep_in = torch.cat([timestep] * 2)
-            with torch.autocast(device_type="cuda", dtype=torch.float16):
+            
+            # Use autocast only if on CUDA
+            if torch.cuda.is_available():
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                    eps_t_uncond, eps_t = self.pipe.unet(z_in, timestep_in, encoder_hidden_states=self.text_embeddings).sample.float().chunk(2)
+            else:
                 eps_t_uncond, eps_t = self.pipe.unet(z_in, timestep_in, encoder_hidden_states=self.text_embeddings).sample.float().chunk(2)
             
             eps_t = eps_t_uncond + self.cfg.guidance_scale * (eps_t - eps_t_uncond)
